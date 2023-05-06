@@ -26,7 +26,10 @@ import (
    6. CLI functionality for taking derivitive 
    7. REPL
    
-   Extension ideas-- 
+   **Extension ideas**
+
+   Presentation ideas
+   
    1. Print as Latex
       - idea:
       (+ (' 7 x 2) (1 x 4) (-1 x -8) ) ==> 
@@ -39,26 +42,62 @@ import (
       - prep: download latex and play with it working
       - goal: pipe output to a latex renderer and display polynomial
       - goal: support any new expressions added from below extensions
-   2. Chain rule
+   2. Colorful parentheses matching
+   3. REPL -- diffierent commands
+     - `d/dx for differentiate
+     - `s for simplify
+     - `pp for pretty printing maybe as polynomial expression, colored parens, latex etc 
+   4. Printing polynomial expressions directly as ( + (' 1 x 5 )  (' 2 x 2)) ==> "x^5 + 2x^2
+
+   Differentiation ideas
+   
+   1. Chain rule
       - d/dx (f(u)) = df/dx * du/dx
       - prep: think about how to modify expressions + write out a test case
       - goal: add composite polys to S-exp, differentiate fn, test in repl
          - i.e. ((x + 5)^7)^-1  --> 
-   3. Product rule
+   2. Product rule
       - d/dx (f * g) = df/dx
       - prep: think about how to modify expressions + write out a test case
       - goal: add products to S-exp, differentiate fn, test in repl
         - i.e. (x + 5) * (x^7)  --> (1)x^7 + (x +5)*7x^6
-   3.5 Rational Functions
+   3. Rational Functions
       - we should do a specialized version of chain rule for power expressions
       - do this plus product rule then we get rational functions and that's cool
       - good goal to shoot for
+      - ( / <poly-expr> <poly-expr>) sugar for this internall use product and power expressions
    4. Infinite sums
       - (+inf n (' 1 x n) ), bind a summation variable n and create a term
       - derivative treams n as a constant
    5. Exponential from taylor series
       - need to deal with 1 / n!
-      - renormalize n-1 to n 
+      - renormalize n-1 to n
+   6. Multi variate derivatives
+      - requires getting polynomial expressions to support multivariate
+   7. Direct support for other transcendental functions
+      - e(x), ln(x), sin(x), cos(x)
+      - probably more fun to implement as infinite series of polynomials
+
+   Polynomial expresion ideas
+
+   1. Multivariate polynomials
+      - as many bound variables as we want: x,y,z
+      - basic atoms of poly expressions become products of monomials with constant a stripped out:
+        term = ( a ( ' x 2 ) ( ' y 7 ) ( ' alpha 4 ) )
+
+   2. Simplification of sums of monomials
+     - algorithm for simplifying polynomial expressions.
+     - drop 0 polynomial terms entirely
+     - combine monomials of the same power
+     - turn nested sums into single sums
+
+   3. Simplifications of richer expressions
+     - Multiply out products
+     - Multiply out power expressions 
+     - Do polynomial division on rational expressions
+
+   4. Expose simplification rules to the repl as a command
+     
    
 */
 
@@ -71,8 +110,8 @@ import (
    <int>          ::= integer string 
 
 Syntactic sugar: 
-sum := s | + 
-mon := m | ‘ 
+sum :=  + 
+mon :=  ‘ 
 
 Example
 
@@ -136,6 +175,17 @@ func (m *MonomialExp) match(s SExp) bool {
 	return *s.Atom == Atom(MonomialKeyWord) || *s.Atom == Atom(MonomialSugarKeyWord) 
 }
 
+func (m *MonomialExp) ToSExp() SExp {
+	return SExp {
+		List: []SExp{
+			NewAtom("'"),
+			NewAtom(fmt.Sprintf("%d", m.a)),
+			NewAtom(string(m.x)),
+			NewAtom(fmt.Sprintf("%d", m.n)),
+		},
+	}
+}
+
 func (m *MonomialExp) Parse(s SExp) error {
 	if len(s.List) != 4 && !m.match(s.List[0]) { 
 		return fmt.Errorf("invalid SExp, cannot parse as monomial %s", s.String())
@@ -168,7 +218,7 @@ type SumExp struct {
 
 // Getter for all sum terms
 // Fields are private to restrict setting to parsing
-func (s *MonomialExp) Term() []PolyExp {
+func (s *SumExp) Term() []PolyExp {
 	return s.ps
 }
 
@@ -178,6 +228,18 @@ func (sum *SumExp) match(sexp SExp) bool {
 	}
 	return *sexp.Atom == Atom(SumKeyWord) || *sexp.Atom == Atom(SumSugarKeyWord) 	
 }
+
+func (sum *SumExp) ToSExp() SExp {
+	sub := []SExp{NewAtom("+")}
+	for _, p := range sum.ps {
+		sub = append(sub, p.ToSExp())
+	}
+
+	return SExp {
+		List: sub, 
+	}
+}
+
 
 func (sum *SumExp) Parse(sexp SExp) error {
 	if len(sexp.List) < 3 || !sum.match(sexp.List[0]) {
@@ -211,14 +273,14 @@ func (p *PolyExp) Sum() (*SumExp, error) {
 	if p.s == nil {
 		return nil, fmt.Errorf("Polynomial is not a sum expression")
 	}
-	return p.s
+	return p.s, nil
 }
 
 func (p *PolyExp) Mon() (*MonomialExp, error) {
 	if p.m == nil {
 		return nil, fmt.Errorf("Polynomial is not a monomial expression")
 	}
-	return p.m
+	return p.m, nil
 }
 
 func (p *PolyExp) check() error {
@@ -235,6 +297,15 @@ func (p *PolyExp) match(sexp SExp) bool {
 	var s SumExp
 	var m MonomialExp
 	return s.match(sexp) || m.match(sexp)
+}
+
+// invariant polyexpression is valid
+func (p *PolyExp) ToSExp() SExp {
+	if p.IsMon() {
+		return p.m.ToSExp()
+	}
+	
+	return p.s.ToSExp()
 }
 
 // populate polynomial with contents of s-expression
@@ -277,6 +348,14 @@ type SExp struct {
 	List []SExp
 }
 
+func NewAtom(s string) SExp {
+	a := new(Atom)
+	*a = Atom(s)
+	return SExp {
+		Atom: a,
+	}
+}
+
 func (s *SExp) check() error {
 	if s.Atom != nil && s.List != nil {
 		return fmt.Errorf("Overpopulated SExp")
@@ -284,10 +363,22 @@ func (s *SExp) check() error {
 	return nil
 }
 
-func (s *SExp) String() string {
-	// todo do this
+func (s SExp) String() string {
+	if s.Atom == nil && s.List == nil {
+		return "( )"
+	}
 	
-	return ""
+	if s.Atom != nil {
+		return string(*s.Atom)
+	}
+
+	ret := "( "
+	for _, sub := range s.List {
+		ret += sub.String() + " " 
+	}
+	ret += ")"
+	
+	return ret
 }
 
 // Invariant: s and t internally consistent as verified with `check`
@@ -318,7 +409,7 @@ func (s *SExp) Equal(t *SExp) bool {
 
 // Parse an S-Expression out of a raw string
 // Support for modern notation for succinct representation of lists with more than one element
-// Limited atom support -- only alphanumeric strings are allowed as atoms
+// Limited atom support -- only alphanumeric strings and registered exceptions are allowed as atoms
 /*
  "( A ( B 0) ())" parses to: 
  

@@ -83,6 +83,21 @@ func TestParsingHelpersPoly(t *testing.T) {
 	assert.Equal(t, "", NormalizeSpaces(next))	
 }
 
+func TestParseSExpDeep(t *testing.T) {
+	raw := "( + ( + ( + ( + 1 2 ) 3 ) 4 ) 5 )"
+	var sexp SExp
+	assert.NoError(t, sexp.Parse(raw))
+	assert.True(t, len(sexp.List) == 3)
+	s := sexp
+	for i := 0; i < 3; i ++ {
+		assert.True(t, len(s.List) == 3)
+		assert.True(t, s.List[0].List == nil) // +
+		assert.True(t, s.List[2].List == nil) // n	
+		s = s.List[1]
+	}
+		
+}
+
 func TestParseSExp(t *testing.T) {
 	raw := "( A ( B 0) ())"
 	a, b, zero := new(Atom), new(Atom), new(Atom)
@@ -124,13 +139,21 @@ func TestParseEmptySpaces(t *testing.T) {
 	var packedSExp SExp
 	var spacedSExp SExp
 	assert.NoError(t, packedSExp.Parse(packed), "parse error")
-	assert.NoError(t, spacedSExp.Parse(spaced), "parse error")	
+	assert.NoError(t, spacedSExp.Parse(spaced), "parse error")
+	assert.Equal(t, "( + ( m 3 x 6 ) ( ' 5 x 0 ) )", packedSExp.String())
+	assert.Equal(t, "( + ( m 3 x 6 ) ( ' 5 x 0 ) )", spacedSExp.String())
 }
 
-func polyMon(t *testing.T, poly PolyExp) MonomialExp {
+func polyMon(t *testing.T, poly PolyExp) *MonomialExp {
 	m, err := poly.Mon()
 	require.NoError(t, err)
 	return m
+}
+
+func polySum(t *testing.T, poly PolyExp) *SumExp {
+	s, err := poly.Sum()
+	require.NoError(t, err)
+	return s
 }
 
 func TestParsePolynomials(t *testing.T) {
@@ -140,5 +163,30 @@ func TestParsePolynomials(t *testing.T) {
 	assert.NoError(t, poly.Parse(sexp), "polynomial parse error")
 	assert.True(t, poly.IsMon())
 	a, x, n := polyMon(t, poly).Term()
-	assert.True(t, n == 2 && a == 1 && x == 'x')
+	assert.True(t, n == 2 && a == 1 && x == Symbol("x"))
+	assert.Equal(t, "( ' 1 x 2 )", poly.ToSExp().String())
+
+	var sexp2 SExp
+	assert.NoError(t, sexp2.Parse("( + ( + ( mon 1 x 0) ( mon 1 y 1 ) ) ( ' 1 x 2 ) )"))
+	var poly2 PolyExp
+	assert.NoError(t, poly2.Parse(sexp2), "polynomial parse error")
+	assert.Equal(t, "( + ( + ( ' 1 x 0 ) ( ' 1 y 1 ) ) ( ' 1 x 2 ) )", poly2.ToSExp().String())	
+	assert.True(t, poly2.IsSum())
+	ps := polySum(t, poly2).Term()
+	require.Len(t, ps, 2)
+	polyFirst, polySecond := ps[0], ps[1]
+	assert.True(t, polyFirst.IsSum() && polySecond.IsMon())
+	a, x, n = polyMon(t, polySecond).Term()
+	assert.True(t, n == 2, a == 1, x == Symbol("x"))
+	assert.Equal(t, "( ' 1 x 2 )", polySecond.ToSExp().String())
+	ps = polySum(t, polyFirst).Term()
+	require.Len(t, ps, 2)
+	assert.Equal(t, "( + ( ' 1 x 0 ) ( ' 1 y 1 ) )", polyFirst.ToSExp().String())	
+	assert.True(t, ps[0].IsMon(), ps[1].IsMon())
+	a, x, n = polyMon(t, ps[0]).Term()
+	assert.True(t, n == 0, a == 1, x == Symbol("x"))
+	assert.Equal(t, "( ' 1 x 0 )", ps[0].ToSExp().String())
+	a, x, n = polyMon(t, ps[1]).Term()
+	assert.True(t, n == 1, a == 1, x == Symbol("y"))
+	assert.Equal(t, "( ' 1 y 1 )", ps[1].ToSExp().String())	
 }
