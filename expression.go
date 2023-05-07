@@ -103,6 +103,28 @@ import (
 
 /*
 
+   --updated grammar--
+   
+   <poly exp>  ::= <sum exp> | <monomial exp> | <product exp> | <constant exp>
+   <sum exp> ::= ( sum <poly exp> ... <poly exp> )
+   <monomial exp> ::= ( ^ <symbol> <int> ) 
+   <product exp> ::= ( * <constant> <poly exp> ) 
+   <constant exp> ::= int
+
+   simplification logic
+   - de next all sums into one flat sum expression
+   - distribute products through all poly, sum, products and constants, only keep around monomials
+   - add together all monomials of the same term
+   - normalizze ( ^ x 0) to constant 1
+   - drop zero constants   
+   
+
+*/
+
+   
+
+/*
+
    <poly exp>     ::= <sum exp> | <monomial exp>
    <sum exp>      ::= (sum <poly exp>...<poly exp>)
    <monomial exp> ::= (mon <int> <symbol> <int>)  // (mon a x n) == a(x^n)
@@ -148,11 +170,21 @@ const MonomialSugarKeyWord = "'"
 
 // Valid atom strings that are not alphanumeric
 var SpecialAtoms map[string]struct{}
+var Rainbow []int
 
 func init() {
 	SpecialAtoms = make(map[string]struct{})
 	SpecialAtoms[SumSugarKeyWord] = struct{}{}
 	SpecialAtoms[MonomialSugarKeyWord] = struct{}{}
+
+	Rainbow = make([]int, 6)
+	Rainbow[1] = 124
+	Rainbow[2] = 202
+	Rainbow[3] = 11
+	Rainbow[4] = 34
+	Rainbow[5] = 51
+	Rainbow[0] = 19
+	
 }
 
 type MonomialExp struct {
@@ -556,7 +588,7 @@ func TakeSExp(raw string) (string, string, error) {
 }
 
 
-// Take a string with repeated spaces an replace them with single spaces
+// Take a string with repeated spaces and replace them with single spaces
 func NormalizeSpaces(s string) string {
 	for strings.Contains(s, "  ") {
 		s = strings.Replace(s, "  ", " ", -1)
@@ -566,7 +598,36 @@ func NormalizeSpaces(s string) string {
 
 
 // Invariant: s has no mismatched parentheses
-//func RainbowParens(s string) (string, error) {
-	
+func RainbowParens(s string, rainbow []int) (string, error) {
+	if len(rainbow) == 0 {
+		return "", fmt.Errorf("Need to specify colors")
+	}
 
-//}
+	// traverse string subbing out parens for sequences coloring parens
+	// use an implict stack by keeping a counter of open parens
+
+	var out string
+	open := 0
+	for _, r := range s {
+		if r == '(' {
+			open++
+			idx := open % len(rainbow)
+			rbv := rainbow[idx]
+			out += fmt.Sprintf("\033[38;5;%dm(\033[0m", rbv)
+		} else if r == ')' {
+			idx := open % len(rainbow)
+			rbv := rainbow[idx]
+			out += fmt.Sprintf("\033[38;5;%dm)\033[0m", rbv)
+			if open == 0 {
+				return "", fmt.Errorf("mismatched parentheses")
+			}
+			open--
+		} else {
+			out += string(r) 
+		}
+	}
+	if open > 0 {
+		return "", fmt.Errorf("mismatched parentheses")
+	}
+	return out, nil
+}

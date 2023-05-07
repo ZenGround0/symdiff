@@ -170,7 +170,7 @@ func TestParsePolynomials(t *testing.T) {
 	assert.NoError(t, sexp2.Parse("( + ( + ( mon 1 x 0) ( mon 1 y 1 ) ) ( ' 1 x 2 ) )"))
 	var poly2 PolyExp
 	assert.NoError(t, poly2.Parse(sexp2), "polynomial parse error")
-	assert.Equal(t, "( + ( + ( ' 1 x 0 ) ( ' 1 y 1 ) ) ( ' 1 x 2 ) )", poly2.ToSExp().String())	
+	assert.Equal(t, "( + ( + ( ' 1 x 0) ( ' 1 y 1 ) ) ( ' 1 x 2 ) )", poly2.ToSExp().String())	
 	assert.True(t, poly2.IsSum())
 	ps := polySum(t, poly2).Term()
 	require.Len(t, ps, 2)
@@ -190,3 +190,21 @@ func TestParsePolynomials(t *testing.T) {
 	assert.True(t, n == 1, a == 1, x == Symbol("y"))
 	assert.Equal(t, "( ' 1 y 1 )", ps[1].ToSExp().String())	
 }
+
+
+func TestRainbow(t *testing.T) {
+	sexp := "( A ( B ( C D ) E ) ( F ( G ( H ( I ( J ( K L ) ) ) ) M ) ) N )"
+	sexpPretty, err := RainbowParens(sexp, Rainbow)
+	require.NoError(t, err)
+	fmt.Printf("%s\n", sexpPretty)
+
+	sexp =  "(   + ( ' 1 x 1) ( ' 4 x 2) ( + ( ' 3 x 0 ) ( ' 5 x 0 ) )) "
+	sexpPretty, err = RainbowParens(sexp, Rainbow)
+	require.NoError(t, err)
+	fmt.Printf("%s\n", sexpPretty)
+
+	mismatched := "( A B ( C ) ) ) (D )"
+	_, err = RainbowParens(mismatched, Rainbow)
+	assert.Error(t, err)
+}
+
