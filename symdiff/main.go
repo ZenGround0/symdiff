@@ -20,7 +20,6 @@ func main() {
 			fmt.Printf("Error reading user input %s\n", err)
 			continue
 		}
-		fmt.Printf("input: %s\n", input)
 		// parse
 		var sexp SExp
 		if err := sexp.Parse(input); err != nil {
@@ -39,9 +38,15 @@ func main() {
 			fmt.Printf("Error taking derivative: %s\n", err)
 			continue
 		}
+		// simplify
+		s, err := Simplify(*d)
+		if err != nil {
+			fmt.Printf("Error simplifying expression %s: %s", d.ToSExp().String(), err)
+			continue
+		}
 
 		// return value
-		prettyString, err := RainbowParens(d.ToSExp().String(), Rainbow)
+		prettyString, err := RainbowParens(s.ToSExp().String(), Rainbow)
 		if err != nil {
 			fmt.Printf("Error formatting output: %s\n", err)
 		}

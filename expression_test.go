@@ -158,37 +158,63 @@ func polySum(t *testing.T, poly PolyExp) *SumExp {
 
 func TestParsePolynomials(t *testing.T) {
 	var sexp SExp
-	assert.NoError(t, sexp.Parse("( ' 1 x 2 )"), "sexp parse error")
+	assert.NoError(t, sexp.Parse("( ^ x 2 )"), "sexp parse error")
 	var poly PolyExp
 	assert.NoError(t, poly.Parse(sexp), "polynomial parse error")
 	assert.True(t, poly.IsMon())
-	a, x, n := polyMon(t, poly).Term()
-	assert.True(t, n == 2 && a == 1 && x == Symbol("x"))
-	assert.Equal(t, "( ' 1 x 2 )", poly.ToSExp().String())
+	x, n := polyMon(t, poly).Term()
+	assert.True(t, n == 2 && x == Symbol("x"))
+	assert.Equal(t, "( ^ x 2 )", poly.ToSExp().String())
 
 	var sexp2 SExp
-	assert.NoError(t, sexp2.Parse("( + ( + ( mon 1 x 0) ( mon 1 y 1 ) ) ( ' 1 x 2 ) )"))
+	assert.NoError(t, sexp2.Parse("( + ( + ( mon x 0) ( mon y 1 ) ) ( ^ x 2 ) )"))
 	var poly2 PolyExp
 	assert.NoError(t, poly2.Parse(sexp2), "polynomial parse error")
-	assert.Equal(t, "( + ( + ( ' 1 x 0) ( ' 1 y 1 ) ) ( ' 1 x 2 ) )", poly2.ToSExp().String())	
+	assert.Equal(t, "( + ( + ( ^ x 0 ) ( ^ y 1 ) ) ( ^ x 2 ) )", poly2.ToSExp().String())	
 	assert.True(t, poly2.IsSum())
 	ps := polySum(t, poly2).Term()
 	require.Len(t, ps, 2)
 	polyFirst, polySecond := ps[0], ps[1]
 	assert.True(t, polyFirst.IsSum() && polySecond.IsMon())
-	a, x, n = polyMon(t, polySecond).Term()
-	assert.True(t, n == 2, a == 1, x == Symbol("x"))
-	assert.Equal(t, "( ' 1 x 2 )", polySecond.ToSExp().String())
+	x, n = polyMon(t, polySecond).Term()
+	assert.True(t, n == 2, x == Symbol("x"))
+	assert.Equal(t, "( ^ x 2 )", polySecond.ToSExp().String())
 	ps = polySum(t, polyFirst).Term()
 	require.Len(t, ps, 2)
-	assert.Equal(t, "( + ( ' 1 x 0 ) ( ' 1 y 1 ) )", polyFirst.ToSExp().String())	
+	assert.Equal(t, "( + ( ^ x 0 ) ( ^ y 1 ) )", polyFirst.ToSExp().String())	
 	assert.True(t, ps[0].IsMon(), ps[1].IsMon())
-	a, x, n = polyMon(t, ps[0]).Term()
-	assert.True(t, n == 0, a == 1, x == Symbol("x"))
-	assert.Equal(t, "( ' 1 x 0 )", ps[0].ToSExp().String())
-	a, x, n = polyMon(t, ps[1]).Term()
-	assert.True(t, n == 1, a == 1, x == Symbol("y"))
-	assert.Equal(t, "( ' 1 y 1 )", ps[1].ToSExp().String())	
+	x, n = polyMon(t, ps[0]).Term()
+	assert.True(t, n == 0, x == Symbol("x"))
+	assert.Equal(t, "( ^ x 0 )", ps[0].ToSExp().String())
+	x, n = polyMon(t, ps[1]).Term()
+	assert.True(t, n == 1, x == Symbol("y"))
+	assert.Equal(t, "( ^ y 1 )", ps[1].ToSExp().String())	
+}
+
+func TestParseConstantPolys(t *testing.T) {
+	var sexp SExp
+	assert.NoError(t, sexp.Parse("2"), "sexp parse error")
+	var poly PolyExp
+	assert.NoError(t, poly.Parse(sexp), "polynomial parse error")
+	assert.Equal(t, "2", poly.ToSExp().String() )
+
+	var sexp2 SExp
+	assert.NoError(t, sexp2.Parse("aaaa2x"), "sexp parse error")
+	var poly2 PolyExp
+	assert.Error(t, poly2.Parse(sexp2), "should fail to parse alphanumeric atom to constant polynomial")
+
+	var sexp3 SExp
+	assert.NoError(t, sexp3.Parse("-30"), "sexp parse error")
+	assert.NoError(t, poly2.Parse(sexp3), "polynomial parse error")
+	assert.Equal(t, "-30", poly2.ToSExp().String() )	
+	
+}
+
+func TestParseProductPoly(t *testing.T) {
+	var sexp SExp
+	assert.NoError(t, sexp.Parse(" ( * 5 ( + ( * 2 ( ^ x 1 ) ) ( * -2 ( ^ x 2 ) )) )"), "sexp parse error")
+	var poly PolyExp
+	assert.NoError(t, poly.Parse(sexp), "polynomial parse error")
 }
 
 
@@ -198,7 +224,7 @@ func TestRainbow(t *testing.T) {
 	require.NoError(t, err)
 	fmt.Printf("%s\n", sexpPretty)
 
-	sexp =  "(   + ( ' 1 x 1) ( ' 4 x 2) ( + ( ' 3 x 0 ) ( ' 5 x 0 ) )) "
+	sexp =  "(   + ( ^ x 1) ( * 4 ( ^ x 2) ) ( + ( * 3 ( ^  x 0 ) ) ( * 5 ( ^ x 0 ) ))) "
 	sexpPretty, err = RainbowParens(sexp, Rainbow)
 	require.NoError(t, err)
 	fmt.Printf("%s\n", sexpPretty)

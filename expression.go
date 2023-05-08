@@ -126,6 +126,8 @@ import (
 /*
 
    <poly exp>     ::= <sum exp> | <monomial exp>
+   < sum exp > -- ( sum <sum exp> <monomial exp>)
+                  ( sum ( sum <monomial exp> <monomail exp> ) <monomial exp> )
    <sum exp>      ::= (sum <poly exp>...<poly exp>)
    <monomial exp> ::= (mon <int> <symbol> <int>)  // (mon a x n) == a(x^n)
    <symbol>       ::= alphabetical string
@@ -166,7 +168,10 @@ func IsSymbol(s string) bool  {
 const SumKeyWord = "sum"
 const SumSugarKeyWord = "+"
 const MonomialKeyWord = "mon"
-const MonomialSugarKeyWord = "'"
+const MonomialSugarKeyWord = "^"
+const ProductKeyWord = "prod"
+const ProductSugarKeyWord = "*"
+const DeprecatedMonomialSyntax = "'"
 
 // Valid atom strings that are not alphanumeric
 var SpecialAtoms map[string]struct{}
@@ -176,6 +181,8 @@ func init() {
 	SpecialAtoms = make(map[string]struct{})
 	SpecialAtoms[SumSugarKeyWord] = struct{}{}
 	SpecialAtoms[MonomialSugarKeyWord] = struct{}{}
+	SpecialAtoms[ProductSugarKeyWord] = struct{}{}
+	SpecialAtoms[DeprecatedMonomialSyntax] = struct{}{}
 
 	Rainbow = make([]int, 6)
 	Rainbow[1] = 124
@@ -187,16 +194,82 @@ func init() {
 	
 }
 
+
+type ConstantExp struct {
+	c int
+}
+
+func (c *ConstantExp) ToSExp() SExp {
+	a := new(Atom)
+	*a = Atom(fmt.Sprintf("%d", c.c))
+	return SExp {
+		Atom: a, 
+	}
+}
+
+func (c *ConstantExp) Parse(s SExp) error {
+	if s.Atom == nil {
+		return fmt.Errorf("invalid S expression %s, cannot parse as constant polynomial", s.String())
+	}
+	a, err := strconv.Atoi(string(*s.Atom))
+	if err != nil {
+		return fmt.Errorf("%s failed to parse constant %s", err, s.String())
+	}	
+	c.c = a
+	
+	return nil
+}
+
+type ProductExp struct {
+	l *ConstantExp
+	r *PolyExp
+}
+
+func (p *ProductExp) ToSExp() SExp {
+	return SExp {
+		List: []SExp {
+			NewAtom("*"),
+			p.l.ToSExp(),
+			p.r.ToSExp(),
+		}, 
+	}
+
+}
+
+func (p *ProductExp) match(sexp SExp) bool {
+	if sexp.Atom == nil {
+		return false
+	}
+	return *sexp.Atom == Atom(ProductKeyWord) || *sexp.Atom == Atom(ProductSugarKeyWord) 	
+}
+
+func (p *ProductExp) Parse(sexp SExp) error {
+	if len(sexp.List) != 3 || !p.match(sexp.List[0]) {
+		return fmt.Errorf("invalid SExp, cannot parse as polynomial product %s", sexp.String())
+	}
+	var constExp ConstantExp
+	if err := constExp.Parse(sexp.List[1]); err != nil {
+		return fmt.Errorf("%s, failed to parse left multiplicand (%s) as constant polynomial", err, sexp.List[1].String())
+	}
+	p.l = &constExp
+	var poly PolyExp
+	if err := poly.Parse(sexp.List[2]); err != nil {
+		return fmt.Errorf("%s, failed to parse sub expression %s as polynomials", err, sexp.List[2].String())
+	}
+	p.r = &poly
+
+	return nil	
+}
+
 type MonomialExp struct {
-	a int
 	x Symbol
 	n int
 }
 
 // Getter for all fields constituting monomial term
 // Fields are private to restrict setting to parsing
-func (m *MonomialExp) Term() (int, Symbol, int) {
-	return m.a, m.x, m.n
+func (m *MonomialExp) Term() (Symbol, int) {
+	return m.x, m.n
 }
 
 // Match monomial to SExp head Atom
@@ -210,8 +283,7 @@ func (m *MonomialExp) match(s SExp) bool {
 func (m *MonomialExp) ToSExp() SExp {
 	return SExp {
 		List: []SExp{
-			NewAtom("'"),
-			NewAtom(fmt.Sprintf("%d", m.a)),
+			NewAtom("^"),
 			NewAtom(string(m.x)),
 			NewAtom(fmt.Sprintf("%d", m.n)),
 		},
@@ -219,7 +291,7 @@ func (m *MonomialExp) ToSExp() SExp {
 }
 
 func (m *MonomialExp) Parse(s SExp) error {
-	if len(s.List) != 4 && !m.match(s.List[0]) { 
+	if len(s.List) != 3 && !m.match(s.List[0]) { 
 		return fmt.Errorf("invalid SExp, cannot parse as monomial %s", s.String())
 	}
 	for _, sexp := range s.List[1:] {
@@ -227,16 +299,11 @@ func (m *MonomialExp) Parse(s SExp) error {
 			return fmt.Errorf("Invalid SExp, cannot parse as monomial %s", s.String())
 		}
 	}
-	a, err := strconv.Atoi(string(*s.List[1].Atom))
-	if err != nil {
-		return fmt.Errorf("%s failed to parse coefficient for monomial %s", err, s.String())
-	}
-	m.a = a
-	if !IsSymbol(string(*s.List[2].Atom)) {
+	if !IsSymbol(string(*s.List[1].Atom)) {
 		return fmt.Errorf("failed to parse variable, not a valid symbol for monomial %s", s.String())
 	}
-	m.x = Symbol(*s.List[2].Atom)
-	n, err := strconv.Atoi(string(*s.List[3].Atom))
+	m.x = Symbol(*s.List[1].Atom)
+	n, err := strconv.Atoi(string(*s.List[2].Atom))
 	if err != nil {
 		return fmt.Errorf("failed to parse exponent %s for monomial %s", err, s.String())
 	}
@@ -291,6 +358,8 @@ type PolyExp struct {
 	// Invariant: union type, at most one field allowed to be populated the other must be nil
 	s *SumExp
 	m *MonomialExp
+	c *ConstantExp
+	p *ProductExp
 }
 
 func (p *PolyExp) IsSum() bool {
@@ -299,6 +368,14 @@ func (p *PolyExp) IsSum() bool {
 
 func (p *PolyExp) IsMon() bool {
 	return p.m != nil 
+}
+
+func (p *PolyExp) IsProduct() bool {
+	return p.p != nil 
+}
+
+func (p *PolyExp) IsConstant() bool {
+	return p.c != nil
 }
 
 func (p *PolyExp) Sum() (*SumExp, error) {
@@ -316,25 +393,39 @@ func (p *PolyExp) Mon() (*MonomialExp, error) {
 }
 
 func (p *PolyExp) check() error {
-	if p.s == nil && p.m == nil {
-		return fmt.Errorf("Unpopulated PolyExp")
+	var nilCount int
+	if p.s == nil {
+		nilCount++
 	}
-	if p.s != nil && p.m != nil {
+	if p.m == nil {
+		nilCount++
+	}
+	if p.p == nil {
+		nilCount++
+	}
+	if p.c == nil {
+		nilCount++
+	}
+
+	if nilCount < 3 {
 		return fmt.Errorf("Overpopulated PolyExp")
 	}
+	if nilCount == 4 {
+		return fmt.Errorf("Unpopulated PolyExp")
+	}
 	return nil
-}
-
-func (p *PolyExp) match(sexp SExp) bool {
-	var s SumExp
-	var m MonomialExp
-	return s.match(sexp) || m.match(sexp)
 }
 
 // invariant polyexpression is valid
 func (p *PolyExp) ToSExp() SExp {
 	if p.IsMon() {
 		return p.m.ToSExp()
+	}
+	if p.IsProduct() {
+		return p.p.ToSExp()
+	}
+	if p.IsConstant() {
+		return p.c.ToSExp()
 	}
 	
 	return p.s.ToSExp()
@@ -346,12 +437,24 @@ func (p *PolyExp) Parse(sexp SExp) (err error) {
 		if err == nil {
 			err = p.check()
 		}
-	}()	
+	}()
+
+	// First check for constant exp
+	if sexp.Atom != nil {
+		var c ConstantExp
+		if err := c.Parse(sexp); err != nil {
+			return err
+		}
+		p.c = &c
+		return nil
+	}
+	
 	if len(sexp.List) < 1 {
 		return fmt.Errorf("invalid SExp, cannot parse as polynomial %s", sexp.String())
 	}
 	var s SumExp
 	var m MonomialExp
+	var prod ProductExp
 
 	if s.match(sexp.List[0]) {
 		if err := s.Parse(sexp); err != nil {
@@ -364,6 +467,12 @@ func (p *PolyExp) Parse(sexp SExp) (err error) {
 			return err
 		}
 		p.m = &m
+	}
+	if prod.match(sexp.List[0]) {
+		if err := prod.Parse(sexp); err != nil {
+			return err
+		}
+		p.p = &prod
 	}
 	
 	return nil
@@ -506,7 +615,7 @@ func (s *SExp) Parse(raw string) (err error) {
 
 
 func isAtomChar(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r)
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-'
 }
 	
 func isAtom (raw string) bool {
