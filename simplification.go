@@ -4,6 +4,14 @@ import (
 	"sort"
 )
 
+/*
+simplification logic
+- de nest all sums into one flat sum expression
+- distribute products through all poly, sum, products and constants, only keep around monomials
+- add together all monomials of the same term
+- normalizze ( ^ x 0) to constant 1
+- drop zero constants
+*/
 func Simplify(poly PolyExp) (*PolyExp, error) {
 	// Distribute
 	// All products are distributed through to constant or monomial terms
@@ -11,7 +19,7 @@ func Simplify(poly PolyExp) (*PolyExp, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Flatten
 	// All terms are flattened to one sum
 	// Add in zero term if there is only one
@@ -24,7 +32,7 @@ func Simplify(poly PolyExp) (*PolyExp, error) {
 	// Zero constant is removed from top level if there are any other terms
 	terms = DropZero(terms)
 
-	// Wrap terms into one flat sum 
+	// Wrap terms into one flat sum
 	// Noop if just one term
 	return Join(terms), nil
 }
@@ -44,7 +52,6 @@ func DropZero(polys []PolyExp) []PolyExp {
 	return nonzero
 }
 
-
 // Combine monomials with same variable and order adding coefficients
 // Skips sums and products with non-monomial right terms.  To do a full
 // reduction into component monomials this should be applied after
@@ -59,15 +66,15 @@ func Fold(polys []PolyExp) []PolyExp {
 		if _, ok := coefficients[sym][n]; !ok {
 			coefficients[sym][n] = 0
 		}
-		coefficients[sym][n] += a		
+		coefficients[sym][n] += a
 	}
-	
+
 	terms := make([]PolyExp, 0)
 	for _, poly := range polys {
 		if poly.IsSum() {
 			terms = append(terms, poly) // untransformed terms
 		} else if poly.IsProduct() {
-			if poly.p.r.IsMon() { 
+			if poly.p.r.IsMon() {
 				a := poly.p.l.c
 				sym := poly.p.r.m.x
 				n := poly.p.r.m.n
@@ -80,7 +87,7 @@ func Fold(polys []PolyExp) []PolyExp {
 			}
 		} else if poly.IsMon() {
 			addCoeff(poly.m.n, 1, poly.m.x)
-		} else {		// constant case
+		} else { // constant case
 			constantCoeff += poly.c.c
 		}
 	}
@@ -99,21 +106,21 @@ func Fold(polys []PolyExp) []PolyExp {
 		sort.Ints(powers)
 		for _, power := range powers {
 			a := coefficients[sym][power]
-			
+
 			if power == 0 {
 				constantCoeff += a
 				continue
 			}
-			
-			m := MonomialExp {
+
+			m := MonomialExp{
 				x: sym,
 				n: power,
 			}
 			if a == 1 {
-				terms = append(terms, PolyExp {m: &m})
+				terms = append(terms, PolyExp{m: &m})
 			} else {
-				mon := PolyExp {
-					p: &ProductExp {
+				mon := PolyExp{
+					p: &ProductExp{
 						l: &ConstantExp{
 							c: a,
 						},
@@ -150,20 +157,19 @@ func Flatten(poly PolyExp) []PolyExp {
 	return flattened
 }
 
-func zero() PolyExp {
-	return PolyExp {
-		c: &ConstantExp {
+func Zero() PolyExp {
+	return PolyExp{
+		c: &ConstantExp{
 			c: 0,
 		},
 	}
-		
 }
 
 func Join(polys []PolyExp) *PolyExp {
 	if len(polys) == 1 {
 		return &polys[0]
 	}
-	return &PolyExp {
+	return &PolyExp{
 		s: &SumExp{
 			ps: polys,
 		},
@@ -185,7 +191,7 @@ func ApplyProducts(mult int, poly PolyExp) (*PolyExp, error) {
 
 	if poly.IsMon() {
 		return &PolyExp{
-			p: &ProductExp {
+			p: &ProductExp{
 				l: &ConstantExp{
 					c: mult,
 				},
@@ -211,5 +217,5 @@ func ApplyProducts(mult int, poly PolyExp) (*PolyExp, error) {
 		return &ret, nil
 	}
 	// Product case
-	return ApplyProducts(poly.p.l.c * mult, *poly.p.r)
+	return ApplyProducts(poly.p.l.c*mult, *poly.p.r)
 }
